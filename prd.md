@@ -361,6 +361,75 @@ Excluded
 	•	UI abstraction depth
 
 ⸻
+## 📡 External Data Acquisition & Tooling Boundary (Clarification)
 
+### Purpose
+
+This section clarifies **how business discovery and data collection occur** in the system, and **what is handled by AINative agents vs external tools**.
+
+This is a clarification of responsibility boundaries, **not a change to product behavior**.
+
+---
+
+### Business Discovery
+
+The system does **not** rely on proprietary lead databases.
+
+Instead, business discovery is performed via **external search and scraping tools**, coordinated by agent workflows.
+
+**Examples of discovery sources (non-binding):**
+- Google Search / Google Maps (business listings)
+- Public business directories
+- Company websites
+- Optional social platforms (e.g. Instagram, LinkedIn) as secondary signals
+
+The choice of tools is an **implementation detail** and may evolve without changing product behavior.
+
+---
+
+### Website & Data Scraping
+
+Once a potential business is identified, relevant public information is collected using **external scraping tools**, such as:
+- Homepage content
+- About / Services pages
+- Public announcements or updates
+
+Agents do **not** directly scrape the web themselves; they:
+- Decide *what* to search
+- Decide *which URLs* to scrape
+- Consume and interpret the collected text
+
+---
+
+### Role of AINative Agents
+
+AINative agents act as the **control plane and reasoning layer**, not the raw data collectors.
+
+Agents are responsible for:
+- Orchestrating discovery and scraping tasks
+- Reasoning over collected data using LLMs
+- Structuring business understanding (what the company does, likely needs, stage)
+- Matching user offerings to business context
+- Generating personalized outreach drafts
+- Persisting memory, state, and learning artifacts
+
+---
+
+### Explicit Non-Goals
+
+- AINative APIs do **not** replace search engines or social platforms
+- The system does **not** guarantee exhaustive discovery of all businesses
+- Social platforms are treated as **signals**, not authoritative data sources
+
+---
+
+### Design Principle
+
+The product is designed to be:
+- **Tool-agnostic** at the PRD level
+- **Agent-coordinated**, not scraper-dependent
+- Flexible to swap discovery or scraping tools without altering product intent
+
+This separation ensures long-term adaptability while preserving a clean product architecture.
 
 
