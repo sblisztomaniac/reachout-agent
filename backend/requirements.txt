@@ -1,0 +1,89 @@
+# Reachout Agent - Python Dependencies
+# Python 3.11+ required
+
+# ============================================================================
+# WEB FRAMEWORK
+# ============================================================================
+fastapi==0.109.0           # Modern async web framework
+uvicorn==0.27.0            # ASGI server for FastAPI
+python-multipart==0.0.6    # For file upload support
+
+# ============================================================================
+# DATA VALIDATION & SERIALIZATION
+# ============================================================================
+pydantic==2.5.0            # Data validation using Python type hints
+pydantic-settings==2.1.0   # Settings management with Pydantic
+email-validator==2.1.0     # Email validation for Pydantic
+
+# ============================================================================
+# AUTHENTICATION & SECURITY
+# ============================================================================
+python-jose[cryptography]==3.3.0  # JWT token handling
+passlib[bcrypt]==1.7.4            # Password hashing
+bcrypt==4.1.2                     # Cryptographic password hashing
+python-multipart==0.0.6           # OAuth2 password flow support
+
+# ============================================================================
+# ENVIRONMENT & CONFIGURATION
+# ============================================================================
+python-dotenv==1.0.0       # Load environment variables from .env
+
+# ============================================================================
+# HTTP CLIENT (for external APIs)
+# ============================================================================
+httpx==0.26.0              # Async HTTP client for API calls
+requests==2.31.0           # Synchronous HTTP client (fallback)
+
+# ============================================================================
+# TESTING
+# ============================================================================
+pytest==7.4.3              # Testing framework
+pytest-asyncio==0.21.1     # Async test support
+pytest-cov==4.1.0          # Code coverage reporting
+pytest-mock==3.12.0        # Mocking support
+httpx==0.26.0              # Test client for FastAPI (already listed)
+
+# ============================================================================
+# CODE QUALITY & LINTING (OPTIONAL)
+# ============================================================================
+black==23.12.1             # Code formatter
+ruff==0.1.9                # Fast Python linter
+mypy==1.8.0                # Static type checker
+
+# ============================================================================
+# UTILITIES
+# ============================================================================
+typing-extensions==4.9.0   # Backported typing features for Python 3.11
+
+# ============================================================================
+# LOGGING & MONITORING (OPTIONAL)
+# ============================================================================
+structlog==24.1.0          # Structured logging
+python-json-logger==2.0.7  # JSON log formatting
+
+# ============================================================================
+# NOTES
+# ============================================================================
+#
+# Installation:
+#   pip install -r requirements.txt
+#
+# Upgrade all dependencies:
+#   pip install --upgrade -r requirements.txt
+#
+# Freeze current versions:
+#   pip freeze > requirements-lock.txt
+#
+# Development vs Production:
+#   For production, consider creating requirements-prod.txt without dev tools
+#   (black, ruff, mypy, pytest) to reduce deployment size
+#
+# Python Version:
+#   Tested with Python 3.11 and 3.12
+#   Minimum required: Python 3.11
+#
+# Virtual Environment:
+#   Always use a virtual environment:
+#     python3.11 -m venv venv
+#     source venv/bin/activate  # or venv\Scripts\activate on Windows
+#     pip install -r requirements.txt
