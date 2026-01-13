@@ -1,0 +1,513 @@
+{
+  "productName": "Reachout Agent",
+  "description": "AI-Native Outreach Copilot for freelancers and solo founders that automates business discovery, research, and personalized message generation",
+  "stories": [
+    {
+      "id": "story-001",
+      "title": "Setup FastAPI project structure and dependencies",
+      "description": "Create backend/ directory with FastAPI project structure including main.py, routers/, models/, services/, utils/, and tests/. Install core dependencies: fastapi, uvicorn, pydantic, pytest, httpx, python-dotenv.",
+      "priority": 1,
+      "acceptanceCriteria": [
+        "backend/ directory exists with proper structure",
+        "requirements.txt includes all core dependencies",
+        "FastAPI app runs with uvicorn (empty, just returns 200)",
+        "Environment variables loaded from .env file",
+        "All tests pass (empty test suite is acceptable)"
+      ],
+      "passes": false,
+      "dependencies": [],
+      "technicalNotes": "Use Python 3.11+. Follow the directory structure from AGENTS.md."
+    },
+    {
+      "id": "story-002",
+      "title": "Create all ZeroDB tables via API",
+      "description": "Implement service to create all 10 MVP tables in ZeroDB: users, user_profiles, intent_profiles, campaigns, leads, company_research, outreach_drafts, outreach_sends, outreach_outcomes, events. Use correct JSON schema format (NOT SQL DDL).",
+      "priority": 1,
+      "acceptanceCriteria": [
+        "All 10 tables created successfully via POST /v1/public/{project_id}/database/tables",
+        "Schema uses JSON format: {\"field_name\": {\"type\": \"uuid\"}}",
+        "NO SQL constraints (PRIMARY KEY, UNIQUE, DEFAULT, NOT NULL) in schema",
+        "GET /database/tables/{table}/rows returns empty arrays for all tables",
+        "Script includes ZeroDB project creation",
+        "All tests pass"
+      ],
+      "passes": false,
+      "dependencies": ["story-001"],
+      "technicalNotes": "Reference docs/datamodel.md sections 3.2-3.14 for exact schema. Store project_id in environment variable."
+    },
+    {
+      "id": "story-003",
+      "title": "Implement ZeroDB client service with app-level constraints",
+      "description": "Create zerodb_client.py service that wraps ZeroDB API calls (insert, query, update). Enforce app-level constraints: unique email, composite unique for leads(user_id, domain), default values, required field validation.",
+      "priority": 1,
+      "acceptanceCriteria": [
+        "insert_row() sets all default values (role='USER', status='ACTIVE', created_at, etc.)",
+        "insert_row() validates required fields before API call",
+        "check_unique() method queries existing records before insert",
+        "Uses row_data parameter (NOT data or rows)",
+        "HTTPException 409 raised for uniqueness violations",
+        "All tests pass with mock ZeroDB responses"
+      ],
+      "passes": false,
+      "dependencies": ["story-002"],
+      "technicalNotes": "See AGENTS.md section 'Application-Level Constraint Enforcement' for all default values and validations."
+    },
+    {
+      "id": "story-004",
+      "title": "Implement JWT authentication endpoints",
+      "description": "Create /auth/login and /auth/register endpoints with JWT token generation. Use FastAPI security utilities. Store user in ZeroDB users table on registration.",
+      "priority": 2,
+      "acceptanceCriteria": [
+        "POST /api/v1/auth/register creates user in users table",
+        "POST /api/v1/auth/login returns JWT token",
+        "Email uniqueness enforced (409 on duplicate)",
+        "Password hashed before storage",
+        "JWT token validates correctly with get_current_user dependency",
+        "All tests pass including auth flow"
+      ],
+      "passes": false,
+      "dependencies": ["story-003"],
+      "technicalNotes": "Use passlib for password hashing, python-jose for JWT. Store JWT secret in .env."
+    },
+    {
+      "id": "story-005",
+      "title": "Create user profile CRUD endpoints",
+      "description": "Implement GET/POST/PATCH /api/v1/profile endpoints for user_profiles table. Include persona, services, industries, geographies, tone_preference fields.",
+      "priority": 2,
+      "acceptanceCriteria": [
+        "POST /api/v1/profile creates user_profile with foreign key validation",
+        "GET /api/v1/profile returns authenticated user's profile",
+        "PATCH /api/v1/profile updates existing profile",
+        "Validates tone_preference is one of: friendly, professional, casual, formal",
+        "Returns 404 if user_id doesn't exist in users table",
+        "All tests pass"
+      ],
+      "passes": false,
+      "dependencies": ["story-004"],
+      "technicalNotes": "Profile belongs to authenticated user only. Use Pydantic models for validation."
+    },
+    {
+      "id": "story-006",
+      "title": "Create intent profile CRUD endpoints",
+      "description": "Implement POST/GET/PATCH /api/v1/intents endpoints for intent_profiles table. Store intent_json with industry, geography, services, constraints.",
+      "priority": 2,
+      "acceptanceCriteria": [
+        "POST /api/v1/intents creates intent_profile for authenticated user",
+        "GET /api/v1/intents lists user's intent profiles",
+        "PATCH /api/v1/intents/{id} updates intent",
+        "Validates status is one of: ACTIVE, INACTIVE",
+        "intent_json is valid JSONB",
+        "All tests pass"
+      ],
+      "passes": false,
+      "dependencies": ["story-004"],
+      "technicalNotes": "Optional: Embed intent text to intent_profiles namespace (can be added later)."
+    },
+    {
+      "id": "story-007",
+      "title": "Create campaign CRUD endpoints",
+      "description": "Implement POST/GET/PATCH /api/v1/campaigns endpoints. Link campaign to intent_profile_id. Support channels array and autonomy_level field.",
+      "priority": 2,
+      "acceptanceCriteria": [
+        "POST /api/v1/campaigns creates campaign with valid intent_profile_id",
+        "GET /api/v1/campaigns lists user's campaigns",
+        "Foreign key check: intent_profile_id must exist",
+        "Validates autonomy_level is one of: DRAFT_ONLY, ASSISTED, AUTONOMOUS",
+        "Validates status is one of: DRAFT, ACTIVE, PAUSED, COMPLETED, ARCHIVED",
+        "All tests pass"
+      ],
+      "passes": false,
+      "dependencies": ["story-006"],
+      "technicalNotes": "Default autonomy_level to DRAFT_ONLY. channels is JSONB array."
+    },
+    {
+      "id": "story-008",
+      "title": "Create lead creation endpoint with deduplication",
+      "description": "Implement POST /api/v1/leads endpoint to create leads manually (stubbed discovery). Enforce composite unique constraint on (user_id, domain).",
+      "priority": 3,
+      "acceptanceCriteria": [
+        "POST /api/v1/leads creates lead with required fields: user_id, company_name",
+        "Composite uniqueness: Cannot create duplicate (user_id, domain)",
+        "Returns 409 if lead with same domain exists for user",
+        "Validates qualification_label is one of: UNQUALIFIED, LOW, MEDIUM, HIGH",
+        "Validates status is one of: NEW, RESEARCHING, QUALIFIED, DRAFTING, SENT, REPLIED, CLOSED",
+        "All tests pass"
+      ],
+      "passes": false,
+      "dependencies": ["story-007"],
+      "technicalNotes": "Query leads table with filter {\"user_id\": user_id, \"domain\": domain} before insert."
+    },
+    {
+      "id": "story-009",
+      "title": "Implement company research agent integration",
+      "description": "Create POST /api/v1/research endpoint that calls AI-Native agent orchestration API to generate company research (summary, pain_hypothesis, hook). Store in company_research table.",
+      "priority": 3,
+      "acceptanceCriteria": [
+        "POST /api/v1/research/{lead_id} triggers research agent",
+        "Agent receives company_name, domain, website_url as input",
+        "Research result stored in company_research table",
+        "Foreign key validation: lead_id must exist",
+        "Returns research_id on success",
+        "All tests pass with mocked agent API"
+      ],
+      "passes": false,
+      "dependencies": ["story-008"],
+      "technicalNotes": "Use POST /v1/public/agent-orchestration/ endpoint. Mock Firecrawl/web search in tests."
+    },
+    {
+      "id": "story-010",
+      "title": "Embed company research and store embedding_doc_id",
+      "description": "After research creation, call POST /embeddings/embed-and-store to embed research text into company_research namespace. Update company_research row with embedding_doc_id.",
+      "priority": 3,
+      "acceptanceCriteria": [
+        "Embedding created with namespace=company_research",
+        "Document text combines summary + pain_hypothesis + hook",
+        "Metadata includes lead_id, industry, domain",
+        "embedding_doc_id stored back in company_research table",
+        "Model used: BAAI/bge-small-en-v1.5 (384-dim)",
+        "All tests pass"
+      ],
+      "passes": false,
+      "dependencies": ["story-009"],
+      "technicalNotes": "Follow embedding flow pattern from AGENTS.md. Document id format: research_{research_id}"
+    },
+    {
+      "id": "story-011",
+      "title": "Implement outreach drafting agent integration",
+      "description": "Create POST /api/v1/drafts endpoint that calls drafting agent. Agent retrieves company research via semantic search and generates personalized email/LinkedIn message.",
+      "priority": 3,
+      "acceptanceCriteria": [
+        "POST /api/v1/drafts creates draft for lead_id and campaign_id",
+        "Agent searches company_research embeddings for context",
+        "Draft includes subject and body",
+        "Validates channel is one of: email, linkedin",
+        "Draft status defaults to DRAFT, approved_by_user defaults to false",
+        "All tests pass"
+      ],
+      "passes": false,
+      "dependencies": ["story-010"],
+      "technicalNotes": "Use POST /embeddings/search to find similar research. Agent should personalize based on user_profile tone."
+    },
+    {
+      "id": "story-012",
+      "title": "Embed outreach draft and store embedding_doc_id",
+      "description": "After draft creation, embed draft text (subject + body) into outreach_drafts namespace and update outreach_drafts row with embedding_doc_id.",
+      "priority": 3,
+      "acceptanceCriteria": [
+        "Embedding created with namespace=outreach_drafts",
+        "Document text combines subject + body",
+        "Metadata includes draft_id, lead_id, channel, approved",
+        "embedding_doc_id stored in outreach_drafts table",
+        "Model: BAAI/bge-small-en-v1.5 (384-dim)",
+        "All tests pass"
+      ],
+      "passes": false,
+      "dependencies": ["story-011"],
+      "technicalNotes": "Document id format: draft_{draft_id}"
+    },
+    {
+      "id": "story-013",
+      "title": "Create draft approval and send flow",
+      "description": "Implement PATCH /api/v1/drafts/{id}/approve to mark approved_by_user=true, then POST /api/v1/drafts/{id}/send to call Agent Bridge API and create outreach_sends record.",
+      "priority": 3,
+      "acceptanceCriteria": [
+        "PATCH /api/v1/drafts/{id}/approve sets approved_by_user=true, approved_at=now()",
+        "POST /api/v1/drafts/{id}/send fails with 400 if not approved",
+        "Send calls POST /v1/public/agent-bridge/message",
+        "outreach_sends record created with external_message_id",
+        "Validates send status is one of: SENT, DELIVERED, BOUNCED, FAILED",
+        "All tests pass with mocked Agent Bridge"
+      ],
+      "passes": false,
+      "dependencies": ["story-012"],
+      "technicalNotes": "Agent Bridge requires to_address, channel, subject, body. Store raw response in raw_payload."
+    },
+    {
+      "id": "story-014",
+      "title": "Create outcome logging endpoint",
+      "description": "Implement POST /api/v1/outcomes to manually log reply text and classification. Store in outreach_outcomes table.",
+      "priority": 4,
+      "acceptanceCriteria": [
+        "POST /api/v1/outcomes creates outcome for send_id",
+        "Validates reply_label is one of: POSITIVE, INTERESTED, NOT_NOW, NOT_INTERESTED, UNSUBSCRIBE, SPAM",
+        "Stores reply_text, reply_confidence, next_action",
+        "Foreign key validation: send_id must exist",
+        "Emits event to events table (event_type=reply_received)",
+        "All tests pass"
+      ],
+      "passes": false,
+      "dependencies": ["story-013"],
+      "technicalNotes": "Optional: Embed reply text to replies namespace (can add later for learning loop)."
+    },
+    {
+      "id": "story-015",
+      "title": "Create minimal campaign dashboard API",
+      "description": "Implement GET /api/v1/campaigns/{id}/dashboard that aggregates: lead count, draft count, send count, reply count, outcome breakdown.",
+      "priority": 4,
+      "acceptanceCriteria": [
+        "Returns total leads for campaign",
+        "Returns total drafts (by status: DRAFT, APPROVED, SENT)",
+        "Returns total sends (by status: SENT, DELIVERED, BOUNCED, FAILED)",
+        "Returns outcomes grouped by reply_label",
+        "All queries filter by campaign_id",
+        "All tests pass"
+      ],
+      "passes": false,
+      "dependencies": ["story-014"],
+      "technicalNotes": "Use multiple ZeroDB queries with filters. Return JSON with aggregate counts."
+    },
+    {
+      "id": "story-016",
+      "title": "Add error handling and logging for all endpoints",
+      "description": "Implement consistent error handling across all API endpoints. Add structured logging for debugging. Include agent run logging in agent_runs table.",
+      "priority": 4,
+      "acceptanceCriteria": [
+        "All endpoints return proper HTTP status codes (400, 404, 409, 500)",
+        "Error responses follow consistent JSON format",
+        "Agent orchestration calls logged in agent_runs table with status, input, output",
+        "Validates agent run_type is one of: DISCOVERY, ENRICHMENT, QUALIFICATION, DRAFTING, LEARNING, FOLLOW_UP",
+        "Validates agent status is one of: QUEUED, RUNNING, SUCCESS, FAILED, TIMEOUT",
+        "All tests pass"
+      ],
+      "passes": false,
+      "dependencies": ["story-015"],
+      "technicalNotes": "Use FastAPI HTTPException. Log agent runs with: agent_name, run_type, status, started_at, ended_at."
+    },
+    {
+      "id": "story-017",
+      "title": "Create API documentation and manual test script",
+      "description": "Generate OpenAPI docs (FastAPI automatic). Create a manual test script (curl or httpx) that demonstrates the full MVP flow end-to-end.",
+      "priority": 4,
+      "acceptanceCriteria": [
+        "OpenAPI docs available at /docs endpoint",
+        "Test script exists in backend/scripts/test_mvp_flow.sh or .py",
+        "Script runs full flow: register → profile → intent → campaign → lead → research → draft → approve → send → outcome",
+        "Script validates each step succeeds",
+        "README.md updated with 'Getting Started' instructions",
+        "All tests pass"
+      ],
+      "passes": false,
+      "dependencies": ["story-016"],
+      "technicalNotes": "Test script should use real ZeroDB (not mocks). Document environment variables needed."
+    },
+    {
+      "id": "story-018",
+      "title": "Setup Next.js project with App Router and shadcn/ui",
+      "description": "Initialize Next.js 14+ project with TypeScript, Tailwind CSS, shadcn/ui components, and TanStack Query. Configure environment variables, API client with JWT auth, and directory structure (app/, components/, lib/, hooks/, types/).",
+      "priority": 1,
+      "acceptanceCriteria": [
+        "Next.js 14+ installed with App Router (not Pages Router)",
+        "TypeScript configured with strict mode",
+        "Tailwind CSS installed and configured",
+        "shadcn/ui initialized with Button, Input, Card, Form, Toast components",
+        "TanStack Query provider configured at root layout",
+        ".env.example created with NEXT_PUBLIC_API_URL",
+        "Directory structure: app/, components/, lib/, hooks/, types/",
+        "Project runs with npm run dev on localhost:3000"
+      ],
+      "passes": false,
+      "dependencies": [],
+      "technicalNotes": "Use Next.js App Router. Install @tanstack/react-query, react-hook-form, zod for forms. Create lib/api-client.ts for centralized API calls with Bearer token."
+    },
+    {
+      "id": "story-019",
+      "title": "Create authentication pages (Login/Register)",
+      "description": "Build /login and /register pages with form validation using react-hook-form + zod. Implement JWT token storage and AuthProvider context for authentication state management.",
+      "priority": 1,
+      "acceptanceCriteria": [
+        "/login page with email/password form using shadcn/ui components",
+        "/register page with email/password/confirm fields",
+        "Form validation using react-hook-form + zod schemas",
+        "Successful login calls POST /api/v1/auth/login and stores JWT",
+        "Successful register calls POST /api/v1/auth/register and auto-logs in",
+        "AuthProvider wraps app, provides useAuth() hook",
+        "Protected routes redirect to /login if not authenticated",
+        "Toast notifications for success/error states",
+        "Forms are accessible (ARIA labels, keyboard navigation)"
+      ],
+      "passes": false,
+      "dependencies": ["story-018", "story-004"],
+      "technicalNotes": "Store JWT in localStorage or httpOnly cookie. Use Next.js middleware for route protection. Create components/auth/AuthProvider.tsx and hooks/useAuth.ts."
+    },
+    {
+      "id": "story-020",
+      "title": "Build user profile setup page",
+      "description": "Create /profile page to view and edit user profile (company, industry, job title, tone preference, outreach goals). Use React Query for GET/PATCH operations with optimistic updates.",
+      "priority": 2,
+      "acceptanceCriteria": [
+        "GET /api/v1/profile on page load using React Query",
+        "Form fields: company_name, industry, job_title, tone_preference (select), outreach_goals (textarea)",
+        "PATCH /api/v1/profile on form submit",
+        "Optimistic updates with React Query",
+        "Validates tone_preference is one of: friendly, professional, casual, formal",
+        "Shows loading skeleton while fetching",
+        "Success/error toast notifications",
+        "Form is accessible"
+      ],
+      "passes": false,
+      "dependencies": ["story-019", "story-005"],
+      "technicalNotes": "Use React Query useQuery for GET and useMutation for PATCH. Enable optimistic updates in mutation config. Use shadcn/ui Select for tone_preference."
+    },
+    {
+      "id": "story-021",
+      "title": "Build intent profile creation and list pages",
+      "description": "Create /intents list page and /intents/new form to manage intent profiles. Display intent cards with status badges, allow editing via /intents/{id}/edit page.",
+      "priority": 2,
+      "acceptanceCriteria": [
+        "/intents page lists user's intent profiles (GET /api/v1/intents)",
+        "/intents/new form with: intent_description, target_persona, value_proposition, example_companies (tag input)",
+        "POST /api/v1/intents creates new intent",
+        "Intent cards show status badge (ACTIVE/INACTIVE)",
+        "Click intent navigates to /intents/{id}/edit",
+        "PATCH /api/v1/intents/{id} updates intent",
+        "React Query for all API calls",
+        "Accessible forms and navigation"
+      ],
+      "passes": false,
+      "dependencies": ["story-019", "story-006"],
+      "technicalNotes": "Use shadcn/ui Badge for status. Consider Combobox or multi-select for example_companies tag input. Create hooks/useIntents.ts for queries/mutations."
+    },
+    {
+      "id": "story-022",
+      "title": "Build campaign list and creation pages",
+      "description": "Create /campaigns list page with campaign cards and /campaigns/new form to create campaigns linked to intent profiles. Show status and autonomy level badges.",
+      "priority": 2,
+      "acceptanceCriteria": [
+        "/campaigns page lists campaigns (GET /api/v1/campaigns)",
+        "Campaign cards show: name, status badge, autonomy_level badge, started_at",
+        "/campaigns/new form: name, intent_profile_id (select), target_description, autonomy_level (radio), messaging_guidelines",
+        "POST /api/v1/campaigns creates campaign",
+        "Validates autonomy_level is one of: DRAFT_ONLY, ASSISTED, AUTONOMOUS",
+        "Validates status is one of: DRAFT, ACTIVE, PAUSED, COMPLETED, ARCHIVED",
+        "Click campaign navigates to /campaigns/{id}",
+        "React Query with optimistic updates"
+      ],
+      "passes": false,
+      "dependencies": ["story-021", "story-007"],
+      "technicalNotes": "Use shadcn/ui Select for intent_profile_id dropdown populated from GET /api/v1/intents. Use RadioGroup for autonomy_level. Create hooks/useCampaigns.ts."
+    },
+    {
+      "id": "story-023",
+      "title": "Build campaign dashboard page with metrics",
+      "description": "Create /campaigns/{id} dashboard showing aggregated campaign metrics: lead count, draft counts by status, send counts, outcome breakdown. Auto-refresh every 30 seconds.",
+      "priority": 3,
+      "acceptanceCriteria": [
+        "GET /api/v1/campaigns/{id}/dashboard fetches metrics",
+        "Display cards: Total Leads, Drafts (by status), Sends (by status), Outcomes (by reply_label)",
+        "Bar/pie chart for outcome breakdown (optional: use recharts)",
+        "Auto-refreshes every 30 seconds using React Query refetchInterval",
+        "Shows loading state while fetching",
+        "Navigation buttons to /campaigns/{id}/leads and /campaigns/{id}/drafts"
+      ],
+      "passes": false,
+      "dependencies": ["story-022", "story-015"],
+      "technicalNotes": "Use React Query refetchInterval: 30000 for auto-refresh. Consider recharts for visualization. Create components/campaigns/CampaignDashboard.tsx."
+    },
+    {
+      "id": "story-024",
+      "title": "Build manual lead creation form",
+      "description": "Create /campaigns/{id}/leads/new form to manually create leads with deduplication validation. Extract domain from website URL and handle 409 uniqueness errors.",
+      "priority": 3,
+      "acceptanceCriteria": [
+        "Form fields: company_name (required), company_website, industry, company_size, location, qualification_label (select)",
+        "POST /api/v1/leads with campaign_id",
+        "Validates qualification_label is one of: UNQUALIFIED, LOW, MEDIUM, HIGH",
+        "Shows 409 error toast if duplicate (user_id, domain) detected",
+        "On success, navigates to /campaigns/{id}/leads",
+        "Form validation with zod schema",
+        "Accessible form"
+      ],
+      "passes": false,
+      "dependencies": ["story-022", "story-008"],
+      "technicalNotes": "Extract domain from company_website URL before submission. Handle 409 error gracefully with toast message. Create hooks/useLeads.ts."
+    },
+    {
+      "id": "story-025",
+      "title": "Build lead list page with research trigger",
+      "description": "Create /campaigns/{id}/leads list showing leads with status badges. Add 'Run Research' button that triggers POST /api/v1/research/{lead_id}. Display research results in expandable card.",
+      "priority": 3,
+      "acceptanceCriteria": [
+        "Lists leads for campaign with status badges (NEW, RESEARCHING, QUALIFIED, etc.)",
+        "'Run Research' button triggers POST /api/v1/research/{lead_id}",
+        "While researching, shows loading spinner on lead card",
+        "After completion, shows research summary in expandable card",
+        "Research displays: summary, pain_hypothesis, hook",
+        "Researched leads show 'Researched' badge",
+        "Poll for completion with React Query refetchInterval or optimistic update"
+      ],
+      "passes": false,
+      "dependencies": ["story-024", "story-009", "story-010"],
+      "technicalNotes": "Research agent is async. Show optimistic 'Researching...' state. Poll status or use websocket for updates. Create components/leads/LeadCard.tsx."
+    },
+    {
+      "id": "story-026",
+      "title": "Build draft generation page",
+      "description": "Create /campaigns/{id}/drafts page showing AI-generated drafts. Add 'Generate Draft' button on leads that triggers POST /api/v1/drafts. Group drafts by status (DRAFT, APPROVED, SENT).",
+      "priority": 3,
+      "acceptanceCriteria": [
+        "'Generate Draft' button triggers POST /api/v1/drafts with lead_id and campaign_id",
+        "Draft creation shows loading state",
+        "Drafts list shows: subject, body preview (truncated), channel badge, approved status, draft_status badge",
+        "Click draft expands to show full email body",
+        "Drafts grouped by status tabs: DRAFT, APPROVED, SENT",
+        "React Query for mutations"
+      ],
+      "passes": false,
+      "dependencies": ["story-025", "story-011", "story-012"],
+      "technicalNotes": "Drafting agent is async. Show 'Generating...' optimistic state. Create components/drafts/DraftCard.tsx. Use shadcn/ui Tabs for status grouping."
+    },
+    {
+      "id": "story-027",
+      "title": "Add draft editing and approval functionality",
+      "description": "Add inline editing to drafts with 'Edit' button. Implement 'Approve' button that calls PATCH /api/v1/drafts/{id}/approve. Show approval status with badge.",
+      "priority": 3,
+      "acceptanceCriteria": [
+        "Each draft has 'Edit' button making subject/body editable (textarea)",
+        "'Save Changes' updates draft (PATCH /api/v1/drafts/{id})",
+        "'Approve' button calls PATCH /api/v1/drafts/{id}/approve",
+        "Approved drafts show green checkmark badge",
+        "Unapproved drafts have 'Send' button disabled",
+        "Optimistic UI updates"
+      ],
+      "passes": false,
+      "dependencies": ["story-026", "story-013"],
+      "technicalNotes": "Use shadcn/ui Textarea for editing. Disable 'Send' button until approved_by_user=true. Create hooks/useDrafts.ts for mutations."
+    },
+    {
+      "id": "story-028",
+      "title": "Build send outreach flow with confirmation",
+      "description": "Add 'Send' button to approved drafts that calls POST /api/v1/drafts/{id}/send. Show confirmation dialog before sending. Handle errors and show success toast.",
+      "priority": 3,
+      "acceptanceCriteria": [
+        "'Send' button only enabled for approved drafts",
+        "Clicking 'Send' shows AlertDialog: 'Send outreach to [company_name]?'",
+        "Confirmation triggers POST /api/v1/drafts/{id}/send",
+        "Success shows toast: 'Outreach sent to [company_name]'",
+        "Sent drafts move to 'Sent' tab with timestamp",
+        "Error handling for 400 (not approved) or Agent Bridge failures",
+        "React Query mutation with error handling"
+      ],
+      "passes": false,
+      "dependencies": ["story-027", "story-013"],
+      "technicalNotes": "Use shadcn/ui AlertDialog for confirmation. Handle Agent Bridge async response. Update draft status optimistically."
+    },
+    {
+      "id": "story-029",
+      "title": "Build outcome logging modal and analytics",
+      "description": "Create 'Log Reply' modal on sent drafts to manually classify outcomes. Show outcome stats on campaign dashboard grouped by reply_label.",
+      "priority": 4,
+      "acceptanceCriteria": [
+        "'Log Reply' button on sent drafts opens Dialog modal",
+        "Form fields: reply_text (textarea), reply_label (select), reply_confidence, next_action (select)",
+        "Validates reply_label is one of: POSITIVE, INTERESTED, NOT_NOW, NOT_INTERESTED, UNSUBSCRIBE, SPAM",
+        "POST /api/v1/outcomes with send_id",
+        "Success closes modal and updates outcome count",
+        "Campaign dashboard shows outcomes grouped by reply_label",
+        "React Query mutation"
+      ],
+      "passes": false,
+      "dependencies": ["story-028", "story-014"],
+      "technicalNotes": "Use shadcn/ui Dialog for outcome logging. Auto-increment outcome counts on campaign dashboard using React Query cache updates."
+    }
+  ]
+}
