@@ -51,11 +51,10 @@ Use namespaces to avoid mixing incompatible retrieval spaces:
 
 | Namespace | What gets stored | Used for |
 |---|---|---|
-| `intent_profiles` | User intent descriptions, constraints | Retrieve similar past intents |
-| `lead_rationales` | “why this lead fits” explanations | Similar-lead discovery |
-| `company_research` | site/product summaries, hooks | Draft personalization |
-| `outreach_drafts` | approved drafts + context | Reuse winning patterns |
-| `replies` | inbound reply text + tags | Classification + learnings |
+| `intent_profiles` | User intent descriptions, constraints | Retrieve similar past intents (optional) |
+| `company_research` | site/product summaries, hooks | Draft personalization (mandatory) |
+| `outreach_drafts` | approved drafts + context | Reuse winning patterns (mandatory) |
+| `replies` | inbound reply text + tags | Classification + learnings (recommended) |
 
 Default embedding model for all namespaces: **`BAAI/bge-small-en-v1.5` (384-dim)**
 
@@ -66,7 +65,37 @@ Default embedding model for all namespaces: **`BAAI/bge-small-en-v1.5` (384-dim)
 > Below are the exact tables you should create via:
 `POST /v1/public/{project_id}/database/tables`
 
-### 3.1 `users`
+### 3.1 Field Value Enums (App-Level Enforcement)
+
+ZeroDB does not support SQL enums or check constraints. These are valid values enforced by application logic.
+
+#### User and Profile Enums
+- `users.role`: `USER`, `ADMIN`
+- `users.status`: `ACTIVE`, `INACTIVE`, `SUSPENDED`
+- `user_profiles.tone_preference`: `friendly`, `professional`, `casual`, `formal`
+
+#### Campaign Enums
+- `campaigns.status`: `DRAFT`, `ACTIVE`, `PAUSED`, `COMPLETED`, `ARCHIVED`
+- `campaigns.autonomy_level`: `DRAFT_ONLY` (human approval required), `ASSISTED` (auto-send with approval), `AUTONOMOUS` (future)
+
+#### Lead Lifecycle Enums
+- `leads.qualification_label`: `UNQUALIFIED`, `LOW`, `MEDIUM`, `HIGH`
+- `leads.status`: `NEW`, `RESEARCHING`, `QUALIFIED`, `DRAFTING`, `SENT`, `REPLIED`, `CLOSED`
+
+#### Agent Run Enums
+- `agent_runs.run_type`: `DISCOVERY`, `ENRICHMENT`, `QUALIFICATION`, `DRAFTING`, `LEARNING`, `FOLLOW_UP`
+- `agent_runs.status`: `QUEUED`, `RUNNING`, `SUCCESS`, `FAILED`, `TIMEOUT`
+
+#### Outreach Enums
+- `outreach_drafts.status`: `DRAFT`, `APPROVED`, `REJECTED`, `SENT`
+- `outreach_drafts.channel`: `email`, `linkedin`
+- `outreach_sends.status`: `SENT`, `DELIVERED`, `BOUNCED`, `FAILED`
+- `outreach_outcomes.reply_label`: `POSITIVE`, `INTERESTED`, `NOT_NOW`, `NOT_INTERESTED`, `UNSUBSCRIBE`, `SPAM`
+- `followups.status`: `SCHEDULED`, `SENT`, `CANCELLED`
+
+---
+
+### 3.2 `users`
 System-level user profile data (minimal duplication if auth exists elsewhere).
 
 **Schema**
@@ -75,20 +104,20 @@ System-level user profile data (minimal duplication if auth exists elsewhere).
   "name": "users",
   "description": "User accounts for OutreachCopilot",
   "schema": {
-    "id": "UUID PRIMARY KEY",
-    "email": "TEXT UNIQUE",
-    "full_name": "TEXT",
-    "role": "TEXT DEFAULT 'USER'", 
-    "status": "TEXT DEFAULT 'ACTIVE'",
-    "created_at": "TIMESTAMP DEFAULT NOW()",
-    "updated_at": "TIMESTAMP DEFAULT NOW()"
+    "id": {"type": "uuid"},
+    "email": {"type": "text"},
+    "full_name": {"type": "text"},
+    "role": {"type": "text"},
+    "status": {"type": "text"},
+    "created_at": {"type": "timestamp"},
+    "updated_at": {"type": "timestamp"}
   }
 }
 
 
 ⸻
 
-3.2 user_profiles
+3.3 user_profiles
 
 Freelancer/Founder-specific business identity.
 
@@ -98,26 +127,26 @@ Schema
   "name": "user_profiles",
   "description": "Freelancer/founder profile for personalization and targeting",
   "schema": {
-    "id": "UUID PRIMARY KEY",
-    "user_id": "UUID NOT NULL",
-    "persona": "TEXT", 
-    "services": "JSONB",
-    "industries": "JSONB",
-    "geographies": "JSONB",
-    "pricing_note": "TEXT",
-    "portfolio_url": "TEXT",
-    "case_studies": "JSONB",
-    "tone_preference": "TEXT DEFAULT 'friendly'",
-    "daily_outreach_limit": "INT DEFAULT 10",
-    "created_at": "TIMESTAMP DEFAULT NOW()",
-    "updated_at": "TIMESTAMP DEFAULT NOW()"
+    "id": {"type": "uuid"},
+    "user_id": {"type": "uuid"},
+    "persona": {"type": "text"},
+    "services": {"type": "jsonb"},
+    "industries": {"type": "jsonb"},
+    "geographies": {"type": "jsonb"},
+    "pricing_note": {"type": "text"},
+    "portfolio_url": {"type": "text"},
+    "case_studies": {"type": "jsonb"},
+    "tone_preference": {"type": "text"},
+    "daily_outreach_limit": {"type": "integer"},
+    "created_at": {"type": "timestamp"},
+    "updated_at": {"type": "timestamp"}
   }
 }
 
 
 ⸻
 
-3.3 intent_profiles
+3.4 intent_profiles
 
 Each “Outreach Intent” becomes a reusable target definition.
 
@@ -127,13 +156,13 @@ Schema
   "name": "intent_profiles",
   "description": "Structured outreach intent definitions",
   "schema": {
-    "id": "UUID PRIMARY KEY",
-    "user_id": "UUID NOT NULL",
-    "name": "TEXT NOT NULL",
-    "intent_json": "JSONB NOT NULL",
-    "status": "TEXT DEFAULT 'ACTIVE'",
-    "created_at": "TIMESTAMP DEFAULT NOW()",
-    "updated_at": "TIMESTAMP DEFAULT NOW()"
+    "id": {"type": "uuid"},
+    "user_id": {"type": "uuid"},
+    "name": {"type": "text"},
+    "intent_json": {"type": "jsonb"},
+    "status": {"type": "text"},
+    "created_at": {"type": "timestamp"},
+    "updated_at": {"type": "timestamp"}
   }
 }
 
@@ -152,7 +181,7 @@ Example intent_json
 
 ⸻
 
-3.4 campaigns
+3.5 campaigns
 
 A campaign is a run configuration tied to an intent.
 
@@ -162,24 +191,24 @@ Schema
   "name": "campaigns",
   "description": "Outreach campaign definition and lifecycle",
   "schema": {
-    "id": "UUID PRIMARY KEY",
-    "user_id": "UUID NOT NULL",
-    "intent_profile_id": "UUID NOT NULL",
-    "name": "TEXT NOT NULL",
-    "status": "TEXT DEFAULT 'DRAFT'", 
-    "channels": "JSONB",
-    "autonomy_level": "TEXT DEFAULT 'DRAFT_ONLY'", 
-    "start_at": "TIMESTAMP",
-    "end_at": "TIMESTAMP",
-    "created_at": "TIMESTAMP DEFAULT NOW()",
-    "updated_at": "TIMESTAMP DEFAULT NOW()"
+    "id": {"type": "uuid"},
+    "user_id": {"type": "uuid"},
+    "intent_profile_id": {"type": "uuid"},
+    "name": {"type": "text"},
+    "status": {"type": "text"},
+    "channels": {"type": "jsonb"},
+    "autonomy_level": {"type": "text"},
+    "start_at": {"type": "timestamp"},
+    "end_at": {"type": "timestamp"},
+    "created_at": {"type": "timestamp"},
+    "updated_at": {"type": "timestamp"}
   }
 }
 
 
 ⸻
 
-3.5 agent_runs
+3.6 agent_runs
 
 Every orchestrated sequence/task execution should be logged.
 
@@ -189,25 +218,25 @@ Schema
   "name": "agent_runs",
   "description": "Logs for agent tasks and sequences executions",
   "schema": {
-    "id": "UUID PRIMARY KEY",
-    "user_id": "UUID NOT NULL",
-    "campaign_id": "UUID",
-    "agent_name": "TEXT NOT NULL",
-    "run_type": "TEXT NOT NULL", 
-    "status": "TEXT DEFAULT 'QUEUED'", 
-    "input": "JSONB",
-    "output": "JSONB",
-    "error": "TEXT",
-    "started_at": "TIMESTAMP",
-    "ended_at": "TIMESTAMP",
-    "created_at": "TIMESTAMP DEFAULT NOW()"
+    "id": {"type": "uuid"},
+    "user_id": {"type": "uuid"},
+    "campaign_id": {"type": "uuid"},
+    "agent_name": {"type": "text"},
+    "run_type": {"type": "text"},
+    "status": {"type": "text"},
+    "input": {"type": "jsonb"},
+    "output": {"type": "jsonb"},
+    "error": {"type": "text"},
+    "started_at": {"type": "timestamp"},
+    "ended_at": {"type": "timestamp"},
+    "created_at": {"type": "timestamp"}
   }
 }
 
 
 ⸻
 
-3.6 leads
+3.7 leads
 
 Canonical lead record (one row per company per user, deduped by domain).
 
@@ -217,28 +246,28 @@ Schema
   "name": "leads",
   "description": "Canonical lead/company record",
   "schema": {
-    "id": "UUID PRIMARY KEY",
-    "user_id": "UUID NOT NULL",
-    "company_name": "TEXT NOT NULL",
-    "domain": "TEXT",
-    "website_url": "TEXT",
-    "linkedin_url": "TEXT",
-    "country": "TEXT",
-    "industry": "TEXT",
-    "company_size_estimate": "TEXT",
-    "signals": "JSONB",
-    "qualification_score": "FLOAT DEFAULT 0.0",
-    "qualification_label": "TEXT DEFAULT 'UNQUALIFIED'",
-    "status": "TEXT DEFAULT 'NEW'",
-    "created_at": "TIMESTAMP DEFAULT NOW()",
-    "updated_at": "TIMESTAMP DEFAULT NOW()"
+    "id": {"type": "uuid"},
+    "user_id": {"type": "uuid"},
+    "company_name": {"type": "text"},
+    "domain": {"type": "text"},
+    "website_url": {"type": "text"},
+    "linkedin_url": {"type": "text"},
+    "country": {"type": "text"},
+    "industry": {"type": "text"},
+    "company_size_estimate": {"type": "text"},
+    "signals": {"type": "jsonb"},
+    "qualification_score": {"type": "float"},
+    "qualification_label": {"type": "text"},
+    "status": {"type": "text"},
+    "created_at": {"type": "timestamp"},
+    "updated_at": {"type": "timestamp"}
   }
 }
 
 
 ⸻
 
-3.7 lead_contacts
+3.8 lead_contacts
 
 Contacts discovered for a lead (people to reach out to).
 
@@ -248,22 +277,22 @@ Schema
   "name": "lead_contacts",
   "description": "Contacts within a lead/company",
   "schema": {
-    "id": "UUID PRIMARY KEY",
-    "lead_id": "UUID NOT NULL",
-    "name": "TEXT",
-    "title": "TEXT",
-    "email": "TEXT",
-    "linkedin_url": "TEXT",
-    "confidence": "FLOAT DEFAULT 0.0",
-    "source": "TEXT",
-    "created_at": "TIMESTAMP DEFAULT NOW()"
+    "id": {"type": "uuid"},
+    "lead_id": {"type": "uuid"},
+    "name": {"type": "text"},
+    "title": {"type": "text"},
+    "email": {"type": "text"},
+    "linkedin_url": {"type": "text"},
+    "confidence": {"type": "float"},
+    "source": {"type": "text"},
+    "created_at": {"type": "timestamp"}
   }
 }
 
 
 ⸻
 
-3.8 company_research
+3.9 company_research
 
 Structured research output (and a pointer to the embedded doc).
 
@@ -273,22 +302,22 @@ Schema
   "name": "company_research",
   "description": "Research notes per company (structured + link to vector doc id)",
   "schema": {
-    "id": "UUID PRIMARY KEY",
-    "lead_id": "UUID NOT NULL",
-    "summary": "TEXT",
-    "pain_hypothesis": "TEXT",
-    "hook": "TEXT",
-    "sources": "JSONB",
-    "embedding_doc_id": "TEXT", 
-    "created_at": "TIMESTAMP DEFAULT NOW()",
-    "updated_at": "TIMESTAMP DEFAULT NOW()"
+    "id": {"type": "uuid"},
+    "lead_id": {"type": "uuid"},
+    "summary": {"type": "text"},
+    "pain_hypothesis": {"type": "text"},
+    "hook": {"type": "text"},
+    "sources": {"type": "jsonb"},
+    "embedding_doc_id": {"type": "text"},
+    "created_at": {"type": "timestamp"},
+    "updated_at": {"type": "timestamp"}
   }
 }
 
 
 ⸻
 
-3.9 outreach_drafts
+3.10 outreach_drafts
 
 Draft messages (email/LinkedIn) + review/approval state.
 
@@ -298,26 +327,26 @@ Schema
   "name": "outreach_drafts",
   "description": "Generated outreach drafts awaiting approval or sent",
   "schema": {
-    "id": "UUID PRIMARY KEY",
-    "campaign_id": "UUID NOT NULL",
-    "lead_id": "UUID NOT NULL",
-    "contact_id": "UUID",
-    "channel": "TEXT NOT NULL",
-    "subject": "TEXT",
-    "body": "TEXT NOT NULL",
-    "status": "TEXT DEFAULT 'DRAFT'",
-    "approved_by_user": "BOOLEAN DEFAULT FALSE",
-    "approved_at": "TIMESTAMP",
-    "embedding_doc_id": "TEXT",
-    "created_at": "TIMESTAMP DEFAULT NOW()",
-    "updated_at": "TIMESTAMP DEFAULT NOW()"
+    "id": {"type": "uuid"},
+    "campaign_id": {"type": "uuid"},
+    "lead_id": {"type": "uuid"},
+    "contact_id": {"type": "uuid"},
+    "channel": {"type": "text"},
+    "subject": {"type": "text"},
+    "body": {"type": "text"},
+    "status": {"type": "text"},
+    "approved_by_user": {"type": "boolean"},
+    "approved_at": {"type": "timestamp"},
+    "embedding_doc_id": {"type": "text"},
+    "created_at": {"type": "timestamp"},
+    "updated_at": {"type": "timestamp"}
   }
 }
 
 
 ⸻
 
-3.10 outreach_sends
+3.11 outreach_sends
 
 Send logs (what was actually sent, when, how).
 
@@ -327,22 +356,22 @@ Schema
   "name": "outreach_sends",
   "description": "Outreach send logs",
   "schema": {
-    "id": "UUID PRIMARY KEY",
-    "draft_id": "UUID NOT NULL",
-    "channel": "TEXT NOT NULL",
-    "provider": "TEXT", 
-    "to_address": "TEXT",
-    "external_message_id": "TEXT",
-    "status": "TEXT DEFAULT 'SENT'",
-    "sent_at": "TIMESTAMP DEFAULT NOW()",
-    "raw_payload": "JSONB"
+    "id": {"type": "uuid"},
+    "draft_id": {"type": "uuid"},
+    "channel": {"type": "text"},
+    "provider": {"type": "text"},
+    "to_address": {"type": "text"},
+    "external_message_id": {"type": "text"},
+    "status": {"type": "text"},
+    "sent_at": {"type": "timestamp"},
+    "raw_payload": {"type": "jsonb"}
   }
 }
 
 
 ⸻
 
-3.11 outreach_outcomes
+3.12 outreach_outcomes
 
 Outcome tracking + response classification.
 
@@ -352,24 +381,24 @@ Schema
   "name": "outreach_outcomes",
   "description": "Reply outcomes and classifications",
   "schema": {
-    "id": "UUID PRIMARY KEY",
-    "send_id": "UUID NOT NULL",
-    "lead_id": "UUID NOT NULL",
-    "reply_received": "BOOLEAN DEFAULT FALSE",
-    "reply_text": "TEXT",
-    "reply_label": "TEXT", 
-    "reply_confidence": "FLOAT DEFAULT 0.0",
-    "next_action": "TEXT",
-    "embedding_doc_id": "TEXT",
-    "created_at": "TIMESTAMP DEFAULT NOW()",
-    "updated_at": "TIMESTAMP DEFAULT NOW()"
+    "id": {"type": "uuid"},
+    "send_id": {"type": "uuid"},
+    "lead_id": {"type": "uuid"},
+    "reply_received": {"type": "boolean"},
+    "reply_text": {"type": "text"},
+    "reply_label": {"type": "text"},
+    "reply_confidence": {"type": "float"},
+    "next_action": {"type": "text"},
+    "embedding_doc_id": {"type": "text"},
+    "created_at": {"type": "timestamp"},
+    "updated_at": {"type": "timestamp"}
   }
 }
 
 
 ⸻
 
-3.12 followups
+3.13 followups
 
 Follow-up scheduling and execution.
 
@@ -379,22 +408,22 @@ Schema
   "name": "followups",
   "description": "Follow-up schedule + execution status",
   "schema": {
-    "id": "UUID PRIMARY KEY",
-    "campaign_id": "UUID NOT NULL",
-    "lead_id": "UUID NOT NULL",
-    "send_id": "UUID",
-    "due_at": "TIMESTAMP NOT NULL",
-    "status": "TEXT DEFAULT 'SCHEDULED'",
-    "followup_body": "TEXT",
-    "created_at": "TIMESTAMP DEFAULT NOW()",
-    "updated_at": "TIMESTAMP DEFAULT NOW()"
+    "id": {"type": "uuid"},
+    "campaign_id": {"type": "uuid"},
+    "lead_id": {"type": "uuid"},
+    "send_id": {"type": "uuid"},
+    "due_at": {"type": "timestamp"},
+    "status": {"type": "text"},
+    "followup_body": {"type": "text"},
+    "created_at": {"type": "timestamp"},
+    "updated_at": {"type": "timestamp"}
   }
 }
 
 
 ⸻
 
-3.13 events
+3.14 events
 
 Analytics / telemetry (matches ZeroDB “event tracking” use case).
 
@@ -404,10 +433,10 @@ Schema
   "name": "events",
   "description": "Product analytics events",
   "schema": {
-    "id": "UUID PRIMARY KEY",
-    "event_type": "TEXT NOT NULL",
-    "data": "JSONB NOT NULL",
-    "timestamp": "TIMESTAMP DEFAULT NOW()"
+    "id": {"type": "uuid"},
+    "event_type": {"type": "text"},
+    "data": {"type": "jsonb"},
+    "timestamp": {"type": "timestamp"}
   }
 }
 
@@ -419,7 +448,62 @@ Schema
 Use:
 POST /v1/public/{project_id}/embeddings/embed-and-store
 
-4.1 Embed Intent Profile (optional but powerful)
+### 4.1 Embedding Strategy Decision Tree
+
+**When to Embed**:
+1. **Company Research** (ALWAYS) - For similarity matching when drafting
+2. **Outreach Drafts** (ALWAYS) - For pattern reuse and learning
+3. **Replies** (RECOMMENDED) - For classification and sentiment analysis
+4. **Intent Profiles** (OPTIONAL) - If using intent similarity for discovery
+
+**When NOT to Embed**:
+- Lead records themselves (too sparse, use structured filters)
+- Send logs (no retrieval value)
+- Agent run metadata (debug data only)
+
+**Embedding Flow Pattern**:
+1. Create structured record in table (get row ID)
+2. Call `POST /embeddings/embed-and-store` with namespace
+3. Extract `document.id` from response
+4. Update table row with `embedding_doc_id` field
+5. Use `embedding_doc_id` to correlate table records with vector docs
+
+**Example: Company Research Flow**
+```python
+# 1. Insert structured data
+research_row = insert_row(
+  table="company_research",
+  row_data={
+    "id": research_id,
+    "lead_id": lead_id,
+    "summary": "...",
+    "pain_hypothesis": "...",
+    "hook": "..."
+  }
+)
+
+# 2. Embed for retrieval
+embed_response = embed_and_store(
+  namespace="company_research",
+  documents=[{
+    "id": f"research_{research_id}",
+    "text": f"{summary}\n{pain_hypothesis}\n{hook}",
+    "metadata": {
+      "lead_id": lead_id,
+      "industry": industry
+    }
+  }]
+)
+
+# 3. Store embedding doc ID
+update_row(
+  table="company_research",
+  row_id=research_id,
+  row_data={"embedding_doc_id": f"research_{research_id}"}
+)
+```
+
+### 4.2 Embed Intent Profile (Optional)
 
 namespace: intent_profiles
 
@@ -435,7 +519,7 @@ documents[] example
   }
 }
 
-4.2 Embed Company Research (recommended)
+### 4.3 Embed Company Research (Mandatory)
 
 namespace: company_research
 
@@ -451,7 +535,7 @@ namespace: company_research
   }
 }
 
-4.3 Embed Outreach Drafts (recommended)
+### 4.4 Embed Outreach Drafts (Mandatory)
 
 namespace: outreach_drafts
 
@@ -467,7 +551,7 @@ namespace: outreach_drafts
   }
 }
 
-4.4 Embed Replies (learning loop)
+### 4.5 Embed Replies (Recommended)
 
 namespace: replies
 
@@ -588,8 +672,59 @@ Embeddings
 	•	Deduplicate leads by domain per user_id (enforce in app logic; ZeroDB schema shown does not declare composite unique)
 	•	Always store:
 	•	lead_id in research/drafts/outcomes for joinability
-	•	embedding_doc_id for each record that’s embedded
+	•	embedding_doc_id for each record that's embedded
 	•	Never mix embedding models in the same namespace
+
+⸻
+
+### 9.1 Application-Level Constraint Enforcement
+
+Since ZeroDB doesn't support SQL constraints, the backend must enforce:
+
+#### Unique Constraints
+- `users.email` - Check before insert/update
+- `leads.(user_id, domain)` - Composite unique: Query existing before insert
+  ```python
+  existing = query_rows(
+    table="leads",
+    filter={"user_id": user_id, "domain": domain}
+  )
+  if existing: raise ConflictError("Lead already exists")
+  ```
+
+#### Not Null Constraints
+Validate required fields before insert:
+- `users`: email, full_name
+- `campaigns`: user_id, intent_profile_id, name
+- `leads`: user_id, company_name
+- `outreach_drafts`: campaign_id, lead_id, channel, body
+
+#### Default Values
+Set in application code before insert:
+- `users.role` → `"USER"`
+- `users.status` → `"ACTIVE"`
+- `user_profiles.tone_preference` → `"friendly"`
+- `user_profiles.daily_outreach_limit` → `10`
+- `campaigns.status` → `"DRAFT"`
+- `campaigns.autonomy_level` → `"DRAFT_ONLY"`
+- `leads.qualification_score` → `0.0`
+- `leads.qualification_label` → `"UNQUALIFIED"`
+- `leads.status` → `"NEW"`
+- `outreach_drafts.approved_by_user` → `false`
+- All `created_at` / `updated_at` → `datetime.now(UTC)`
+
+#### Foreign Key Integrity
+Verify references exist before insert:
+- Before inserting `user_profiles`: Check `users.id` exists
+- Before inserting `campaigns`: Check `user_id` and `intent_profile_id` exist
+- Before inserting `leads`: Check `user_id` exists
+- Before inserting `company_research`: Check `lead_id` exists
+
+#### Cascade Deletes (Implement in Code)
+When deleting:
+- Delete user → Delete user_profiles, intent_profiles, campaigns (cascade)
+- Delete campaign → Delete outreach_drafts, outreach_sends (cascade)
+- Delete lead → Delete lead_contacts, company_research, outreach_drafts (cascade)
 
 ⸻
 
